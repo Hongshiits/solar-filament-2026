@@ -1,0 +1,25 @@
+# data and large artefacts (downloaded / regenerated, not committed)
+data/
+work/
+*.zip
+*.tar
+# python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+# outputs
+submission.csv
+submissions/
+# logs
+*.log
+# latex build artefacts
+*.aux
+*.log
+*.out
+*.toc
+*.bbl
+*.blg
+# OS
+.DS_Store
+Thumbs.db

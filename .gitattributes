@@ -1,0 +1,10 @@
+# Model weights are committed directly: each file is below GitHub's 100 MB per-file limit,
+# so Git LFS is NOT required. The attributes below only stop git from text-converting binaries.
+*.pt    binary
+*.pth   binary
+*.onnx  binary
+*.ckpt  binary
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary

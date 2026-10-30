@@ -1,0 +1,38 @@
+# Inference configuration (frozen for the submitted predictions).
+# Every value here matches src/cloud_pipeline.py as used for the paper's final model.
+seed: 42
+
+data_root: data/MAGFiLO_1.0_Kaggle_2026          # official competition download, unzipped (see docs/INFERENCE.md)
+test_dir: test/test_images
+train_dir: train/train_images
+annotations: train/MAGFiLO_1.0_Annotations_kaggle2026_train.json
+
+weights:
+  detector: weights/best_det.pt
+  refiner: weights/best_ref.pt
+
+# detector: YOLO11-seg, single class, 1024 px input (cloud_pipeline.detect_seeds)
+detector:
+  imgsz: 1024
+  conf: 0.35              # selected by the fold-0 validation PQ sweep (configs/../docs/TRAIN.md)
+  iou: 0.50
+  agnostic_nms: true
+  max_det: 300
+
+# refiner: seed-conditioned ResNet18 U-Net on 256 px crops (cloud_pipeline.predict_image)
+refiner:
+  size: 256
+  context: 1.8            # crop side = ceil(context * max(bbox side)), min 96 px
+  min_crop: 96
+  threshold: 0.50         # selected by the fold-0 validation PQ sweep
+  tta: guard              # 4 views: identity / hflip / vflip / hvflip, topology-guarded
+  tta_area_ratio: [0.60, 1.70]
+  tta_dice_min: 0.62
+
+# assembly: score-ordered pixel-disjoint allocation (official scorer rejects overlaps)
+assembly:
+  min_area: 48
+
+output:
+  submission_path: submission.csv
+  image_size: 2048

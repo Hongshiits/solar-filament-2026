@@ -1,0 +1,27 @@
+# Environment used for the final submission (Python 3.12-3.14).
+# Install the CUDA build of PyTorch FIRST, because PyPI wheels are CPU-only:
+#   pip install torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu128
+# then: pip install -r requirements.txt
+#
+# PyTorch (CUDA 12.8 build tested; any compatible build works)
+torch==2.11.0
+torchvision==0.26.0
+ultralytics==8.4.191
+# Core scientific stack
+numpy==2.4.2
+pandas==3.0.1
+opencv-python==5.0.0.93
+opencv-python-headless==5.0.0.93
+pycocotools==2.0.11
+scikit-learn==1.9.1
+scikit-image==0.26.0
+scipy==1.18.1
+pillow==12.2.0
+matplotlib==3.10.8
+seaborn==0.13.2
+timm==1.0.30
+PyYAML==6.0.3
+tqdm==4.70.1
+requests==2.34.2
+# Optional: ONNX export / deployment (used only for the efficiency measurement)
+onnxruntime==1.31.0
