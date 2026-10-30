@@ -18,3 +18,14 @@ commit.
 
 Every training script writes a JSON config fingerprint (seed + thresholds) so the report,
 configs/ and the produced submission.csv can be matched.
+## Reproducing the selected final submissions
+
+The two final submissions are produced by separate pipelines documented in
+`../docs/REPRODUCE_FINAL_SUBMISSIONS.md`:
+
+- submission A (public 10x U-Net ensemble): `../scripts/infer_dariush_ensemble.py`;
+- submission B (15-model YOLO consensus + vote filter): `../experiments/code/cloud_notoverkil_ensemble.py`
+  followed by `../scripts/vote_filter_nk.py`.
+
+The quantitative rubric analysis (Dice/IoU distributions, one-to-many/many-to-one relations) is in
+`../docs/ANALYSIS.md` and produced by `rubric_metrics.py` / `official_selfeval.py` in this folder.
