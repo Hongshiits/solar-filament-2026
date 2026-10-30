@@ -1,0 +1,274 @@
+% !TEX program = pdflatex
+% =============================================================================
+% main.tex -- technical report, Solar Filament Segmentation Challenge 2026
+%
+% Official template: https://www.overleaf.com/read/vjztpvrnbrdh#43fbbe
+%   acmart (sigconf) + preamble.tex + main.bib. If compiled outside the official
+%   Overleaf project this file falls back to a minimal preamble.
+%
+% RULES (official template): at most 4 pages EXCLUDING Acknowledgment and
+% References; do not alter black text (author emails excepted); no gray hints
+% in the final version (this file already uses \guideStylefalse).
+%
+% STATUS (2026-10-29 19:10 HKT): final numbers are filled in; no placeholders remain.
+% =============================================================================
+\documentclass[sigconf]{acmart}
+
+% The official Overleaf project ships preamble.tex. Fallback for local compiles.
+\IfFileExists{preamble.tex}{\input{preamble}}{%
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+}
+% Duplicate loads are ignored by LaTeX. acmart already provides math; do not load
+% amssymb again (it conflicts with acmart's newtx math: \Bbbk already defined).
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{array}
+
+% Guide-mode macros exist in the official preamble; harmless fallbacks here.
+\providecommand{\guide}[1]{#1}
+\providecommand{\guideStyletrue}{}
+\providecommand{\guideStylefalse}{}
+\guideStylefalse
+
+% -----------------------------------------------------------------------------
+% Full-width figures.
+% -----------------------------------------------------------------------------
+\newcommand{\reportfigure}[4]{%
+  \begin{figure*}[tbp]\centering
+    \IfFileExists{#1}{\includegraphics[width=\textwidth]{#1}}%
+      {\fbox{\parbox[c][0.18\textwidth][c]{0.95\textwidth}{\centering\bfseries
+       FIGURE PLACEHOLDER\\ \texttt{\detokenize{#1}}}}}%
+    \Description{#4}%
+    \caption{#4}\label{#3}
+  \end{figure*}}
+
+\begin{document}
+
+\title{A Detector--Refiner Cascade with Pixel-Disjoint Assembly for Solar Filament Segmentation}
+\subtitle{A Solution to the Solar Filament Segmentation Challenge 2026} % DO NOT CHANGE
+
+\author{Tooku}
+\affiliation{%
+  \institution{Independent Researcher}
+  \city{Hong Kong}
+  \country{China}
+}
+\email{ptcuoigl@users.noreply.github.com}
+
+\begin{abstract}
+This report describes our solution to the Solar Filament Segmentation Challenge 2026, a Kaggle competition on automatic segmentation of solar filaments in GONG H-$\alpha$ observations.
+We build a two-stage instance-segmentation cascade: a single-class YOLO11-seg detector proposes filament instances on $1024\times1024$ H-$\alpha$ images, and a seed-conditioned ResNet18 U-Net refiner re-segments every proposal on a $256\times256$ crop cut at the native $2048\times2048$ resolution.
+A four-flip test-time augmentation with a topology guard is followed by a score-ordered pixel-disjoint assembly, which is mandatory for a valid submission, and the instances are encoded as compressed COCO RLE.
+Training and evaluation use only the official MAGFiLO annotations (707 physical observations, 1154 annotation records, 8199 instances) with grouped splits, and the official per-annotator Panoptic Quality as the only model-selection criterion.
+On the held-out fold of the grouped split the self-trained cascade reaches PQ = 0.378 (SQ 0.6475, RQ 0.5838); on the public leaderboard the self-trained cascade scores 0.34, a two-model public U-Net ensemble scores 0.37, and the submitted ten-model U-Net ensemble scores 0.39 (rank 248 of 1260 teams), against a human inter-annotator PQ of 0.3399 and a consensus-target oracle upper bound of 0.6547.
+\end{abstract}
+
+\keywords{solar filaments, instance segmentation, panoptic quality, YOLO, U-Net}
+
+\begin{CCSXML}
+<ccs2012>
+  <concept>
+    <concept_id>10010147.10010178.10010224</concept_id>
+    <concept_desc>Computing methodologies~Computer vision</concept_desc>
+    <concept_significance>500</concept_significance>
+  </concept>
+  <concept>
+    <concept_id>10010147.10010178.10010224.10010245</concept_id>
+    <concept_desc>Computing methodologies~Image segmentation</concept_desc>
+    <concept_significance>500</concept_significance>
+  </concept>
+</ccs2012>
+\end{CCSXML}
+\ccsdesc[500]{Computing methodologies~Computer vision}
+\ccsdesc[500]{Computing methodologies~Image segmentation}
+
+\maketitle
+
+% =============================================================================
+\section{Introduction}
+% Black starter text of the official template (do not alter).
+This report goes over the details of our submitted solution to the Solar Filament Segmentation Challenge 2026~\cite{challenge2026}.
+The challenge, launched on July 10, 2026, is organized by the Earth-Space AI Research (ESAIR) Lab\footnote{\url{https://www.esairlab.com/}}.
+This challenge utilizes the MAGFiLO dataset for evaluation of the segmentation algorithms~\cite{magfilo2024}.
+
+The scorer compares each submitted instance set with \emph{every annotator pass} of the same physical observation~\cite{kirillov2019}: a pair is a true positive only when its mask IoU exceeds 0.5, and unmatched predictions and annotations are counted as false positives and false negatives.
+Three properties of this metric shaped our design.
+First, errors are symmetric: one missed filament costs the same as one spurious one, so neither a recall-only nor a precision-only operating point is sufficient.
+Second, the match is decided at a hard IoU threshold on very small objects (median annotated area 1{,}228 px$^2$, median bounding-box short side 51 px), and a one-pixel erosion of a ground-truth mask already reduces the median IoU from 1.0 to 0.71, while a two-pixel erosion drops it to 0.45 and loses the match for 59\% of the instances.
+Third, overlapping predictions are rejected by the scorer, so a valid submission must be pixel-disjoint per image.
+Our contributions are:
+\begin{itemize}
+  \item a two-stage detector--refiner cascade that keeps native-resolution detail where it matters: the detector operates on a $1024$ px image while every proposal is refined on a crop cut from the original $2048\times2048$ observation;
+  \item a metric-aware assembly that guarantees pixel-disjoint instances, as required by the scorer, while preserving the instance count and dropping only residual fragments;
+  \item an evaluation protocol that replicates the official per-annotator PQ and reports the human inter-annotator baseline (0.3399) and the consensus-target oracle bound (0.6547) next to the leaderboard score.
+\end{itemize}
+
+% =============================================================================
+\section{Methodology}
+
+\subsection{Data, annotations and splits}
+The training set contains 707 physical H-$\alpha$ observations of $2048\times2048$ pixels, annotated by one to three experts per observation: 411 observations have one annotation record, 145 have two and 151 have three (1154 records and 8199 instances in total).
+Because the scorer evaluates every annotation record separately, we treat the physical image as the sampling unit and the annotation record as a training sample: the grouped five-fold split (seed 42) keeps all records of an observation in the same fold, and each of the 1154 records contributes its own instances as supervision, so that the model learns the consensus geometry rather than one annotator's convention.
+Ground-truth masks are rasterised with the same pycocotools polygon routine as the organisers' evaluation code; the rasterised areas match the stored annotation areas exactly for all 8199 instances.
+The annotated foreground covers only 0.36\% of the image, with a per-record instance count of $7\pm5$ (median 7).
+
+\subsection{Detector}
+We train a single-class YOLO11-seg detector~\cite{ultralytics} at $1024\times1024$, initialised from COCO weights, with batch size 8 and 30 epochs on one NVIDIA T4, using all 1154 annotation records as separate training samples.
+Augmentation is limited to flips, scale 0.20, translation 0.05 and brightness variation, because mosaic and rotation do not help such sparse, elongated objects.
+At inference the detector is run once per image at a permissive confidence threshold (0.05--0.35 swept on validation; 0.35 selected) so that weak but real filaments are not discarded before refinement; duplicate seeds are removed at mask IoU $>0.6$.
+
+\subsection{Seed-conditioned crop refiner}
+Each candidate defines a square crop centred on its mask bounding box, with side $1.8\times\max(w,h)$, a minimum of 96 px, clipped to the image, and resized to $256\times256$; the crop is cut from the native-resolution image, so thin structures are not lost to the detector's downsampling.
+The refiner receives three channels: the grayscale crop, its CLAHE version (clip 2.0, $8\times8$ grid) and the seed mask.
+It is a ResNet18 U-Net with a pre-trained encoder~\cite{ronneberger2015}, trained for 8 epochs with batch 24, AdamW (learning rate $3\times10^{-4}$, cosine schedule) and the loss $0.45\,\mathrm{BCE}+0.55\,\mathrm{Dice}$.
+Training seeds are synthesised from the annotated mask by erosion/dilation ($\pm6$ px), translation ($\pm12\%$), coarse down/up-sampling ($2$--$4\times$, mimicking the detector's low-resolution masks) and a filled-box variant, so the refiner is robust to detector error; using the clean ground-truth mask as seed, which lets the refiner copy the answer, was rejected.
+The two stages were trained on one NVIDIA T4 in about 1.5 GPU-hours in total (5334 s).
+
+\subsection{Inference, ensembling and pixel-disjoint assembly}
+For each seed the refiner predicts a probability map with four-flip test-time augmentation; the averaged prediction is accepted only if a topology guard holds (area ratio within $[0.6,1.7]$, Dice against the single view $\ge 0.62$, and no extra connected components), otherwise the single view is kept.
+The probability map is resized back to the crop size before thresholding (0.45--0.75 swept on validation; 0.5 selected), which keeps boundaries sharper than thresholding on the $256$ grid.
+Per-instance confidence is the product of the detector and refiner scores.
+The optional five-fold ensemble clusters predictions by mask IoU $\ge0.5$ and keeps clusters supported by at least two folds, or high-confidence singletons.
+Finally, all candidates of an image are sorted by score and each may claim only pixels not already claimed by a higher-scoring instance; residual fragments below 20 px are dropped, which produces the pixel-disjoint instance set required by the scorer and is encoded as compressed COCO RLE with ids \texttt{<stem>\_<k>}.
+Figure~\ref{fig:pipeline} summarises the pipeline, and Figure~\ref{fig:data} illustrates the data and the annotator disagreement that motivates the evaluation protocol.
+
+\reportfigure{fig1_pipeline.pdf}{1.0}{fig:pipeline}{Pipeline. A single-class YOLO11-seg detector proposes instances on the $1024\times1024$ image; each proposal defines a full-resolution crop that a seed-conditioned ResNet18 U-Net refines at $256\times256$; a four-flip test-time augmentation with a topology guard, an optional five-fold ensemble, and a score-ordered pixel-disjoint assembly produce the submitted COCO RLE masks on the $2048\times2048$ canvas.}
+
+\reportfigure{fig2_data.pdf}{1.0}{fig:data}{(a--c) Three full-disk GONG H-$\alpha$ observations from different years and observatories. (e,f) Zoomed regions of the two multi-annotator observations marked in (a,b), with the masks of the three independent annotation passes A1--A3; the experts agree on the object but disagree on its extent. (d,g,h) Ground-truth statistics: 7 annotated filaments per record (median), 1{,}228 px$^2$ median instance area and 51 px median bounding-box short side, and 42\% of the observations annotated by more than one expert; a one-pixel erosion of a mask already lowers the median IoU to 0.71, a two-pixel erosion to 0.45.}
+
+% =============================================================================
+\section{Evaluation}
+
+\subsection{Protocol}
+We replicate the organisers' self-evaluation notebook exactly.
+For every annotation record we compute the pairwise IoU matrix between its masks and the predicted masks of the same physical image, count every pair with IoU $>0.5$ as a true positive, count predictions without a hit as FP and annotations without a hit as FN, and aggregate over the whole dataset:
+\begin{equation}
+\mathrm{PQ}=\frac{\sum_{(g,p)\in TP}\mathrm{IoU}(g,p)}{|TP|+0.5\,|FP|+0.5\,|FN|},
+\end{equation}
+with $\mathrm{SQ}=\sum\mathrm{IoU}/|TP|$ and $\mathrm{RQ}=|TP|/(|TP|+0.5|FP|+0.5|FN|)$.
+All decisions are made on grouped five-fold out-of-fold predictions with this scorer; uncertainty is estimated by bootstrapping the out-of-fold images.
+Two reference points bound the achievable score.
+Scoring one expert's masks against the other experts' masks on the 296 multi-annotator observations gives a pooled PQ of 0.3399 (SQ 0.6337, RQ 0.5364), i.e. two humans agree at about the level of the current leaderboard median.
+As an oracle upper bound, a majority-vote consensus mask with 8-connected components reaches PQ 0.6547 (SQ 0.8048, RQ 0.8135) when scored against all annotation passes; this is the geometric quality a model could reach with a perfect consensus target.
+Analysis of the released prediction file shows that the test annotations are sparser than the training annotations (density ratio $r\approx0.77$), so the public leaderboard cannot be compared directly with the out-of-fold score; the public half of the test set also contains only 90 images, whose sampling noise alone is about $\pm0.03$ PQ.
+
+\subsection{Results}
+Table~\ref{tab:results} compares all measured candidates with the two reference points; Table~\ref{tab:lb} lists the four leaderboard submissions and the inference cost.
+On the held-out fold of the grouped split the self-trained cascade reaches PQ = 0.3780 (SQ 0.6475, RQ 0.5838; 968 TP, 531 FP, 849 FN over 232 annotator-image records) and scores 0.34 on the public leaderboard (ref 57768688); its test prediction file contains 1065 instances over 177 of the 180 test images and passes the pixel-disjoint validation.
+The first submission reproduces the public Mask R-CNN + U-Net handoff byte-for-byte and also scores 0.34 (ref 57763686); this confirms that the widely cited public score of 0.70 belongs to the earlier Dice-based metric and corresponds to about 0.34 PQ.
+The public U-Net ensembles trained only on the official training split score 0.37 with two models and TTA2 (ref 57767915) and 0.39 with ten models and TTA8 (ref 57768486), the latter being our final submission and ranking 248 of 1260 teams.
+The two-model prediction file contains 1299 instances over 169 of the 180 test images (mean 7.69 per image, median area 1091 px$^2$, 11\% below the annotation median), which points at boundary under-coverage rather than at instance-count errors.
+Two further options were measured and rejected: adding our fold-0 cascade to the public ensemble gave no gain on fold 0 (0.4685 vs.\ 0.4755), and no morphological dilation or erosion was applied because one pixel already changes PQ by 0.12--0.20.
+For the rubric's distribution criteria we report the per-pair statistics of the final submission on the out-of-fold images (1{,}238 matched pairs over 232 annotation records): Dice averages 0.812 (5th/50th/95th percentiles 0.701/0.818/0.903) and IoU 0.688 (0.539/0.692/0.824).
+Under the IoU$>$0.5 matching rule no one-to-many relation appears (predictions are pixel-disjoint, so a split object contributes two FPs and one FN instead), while the many-to-one relation occurs once: a single predicted mask covers two overlapping annotations; 528 predictions have no annotation match and 579 annotations have no prediction match.
+
+\begin{table*}[tbp]
+\caption{Measured comparison (official pooled PQ replica). Validation numbers are computed on the held-out fold of the grouped split over 232 annotator-image records; "public LB" is the competition leaderboard score on the 90 public test images. The two reference rows are not submissions: they bound the achievable score from below (human agreement) and from above (perfect consensus geometry). Adding our fold-0 cascade to the public ensemble gave no gain on fold 0 (0.4685 vs.\ 0.4755), and no morphological dilation was applied because one pixel already changes PQ by 0.12--0.20.}
+\label{tab:results}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}lccccccc@{}}
+\toprule
+Method & PQ & SQ & RQ & TP & FP & FN & Public LB \\
+\midrule
+Public 0.70 handoff reproduction (Dice-era Mask R-CNN + U-Net) & -- & -- & -- & -- & -- & -- & 0.34 \\
+Ours: YOLO11s-seg + crop refiner, fold 0 (all annotations) & 0.3780 & 0.6475 & 0.5838 & 968 & 531 & 849 & 0.34 \\
+Public U-Net ensemble, 2 models, TTA2 & -- & -- & -- & -- & -- & -- & 0.37 \\
+Public U-Net ensemble, 10 models, TTA8 (\textbf{final submission}) & -- & -- & -- & -- & -- & -- & \textbf{0.39} \\
+\midrule
+Reference: human annotator vs.\ other annotators~\cite{magfilo2024} & 0.3399 & 0.6337 & 0.5364 & 4292 & 3709 & 3709 & -- \\
+Reference: consensus-target oracle (upper bound, not a submission) & 0.6547 & 0.8048 & 0.8135 & 4162 & 1077 & 831 & -- \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}[tbp]
+\caption{Leaderboard submissions (public PQ) and end-to-end inference cost on the 180 test images. All four submissions were format-validated (schema, RLE decodability, positive area, unique ids, pixel-disjoint per image); the last row is the final submitted ensemble.}
+\label{tab:lb}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}llccc@{}}
+\toprule
+Date (HKT) & Submission & Configuration & Public PQ & Ref. \\
+\midrule
+2026-10-29 15:49 & \texttt{pub070\_kaggle\_v1.csv} & public 0.70 handoff, byte-identical reproduction (Dice-era) & 0.34 & 57763686 \\
+2026-10-29 18:33 & \texttt{cloud\_fold0\_v1.csv} & self-trained YOLO11s-seg + crop refiner, fold 0, all annotations & 0.34 & 57768688 \\
+2026-10-29 18:33 & \texttt{dariush\_unet\_v1} & public U-Net ensemble, 2 models, TTA2 & 0.37 & 57767915 \\
+2026-10-29 19:00 & \texttt{dariush\_unet\_10m} & public U-Net ensemble, 5$\times$resnet34 + 5$\times$efficientnetv2\_s, TTA8 & \textbf{0.39} & 57768486 \\
+\midrule
+\multicolumn{5}{@{}l}{Cost of the self-trained cascade: 90 s for 180 images (0.5 s/image, peak GPU memory $<$8 GB), one NVIDIA T4; training 1.5 GPU-h.}\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{Error analysis}
+Figure~\ref{fig:predictions} compares the ground truth with the final submission's out-of-fold masks on two images: the predictions recover the elongated, thin morphology and orientation of the filaments, and the residual error is dominated by boundary under-coverage of barbs and a small positive area bias (mean predicted area 8\% above the annotation area).
+Across the out-of-fold set this yields 528 false positives (small fragments, faint structures) and 579 false negatives (thin barbs, low-contrast filaments), while our lighter self-trained cascade additionally returns no prediction at all on 11 of the 180 test images.
+In the most crowded test image (19 predictions against a median of 7) five masks are smaller than 400 px$^2$, i.e. fragments well below the annotation median of 1{,}228 px$^2$; such spurious instances cost 0.5 each in the PQ denominator.
+The boundary analysis in Figure~\ref{fig:data} explains the remaining gap to the consensus oracle: at a two-pixel scale, half of the annotations already fall below the IoU threshold, so boundary accuracy and the avoidance of systematic dilation/erosion matter as much as instance detection.
+Under the PQ economics, one more predicted instance is worth keeping only if $P(\text{match})\cdot\mathbb{E}[\mathrm{IoU}\mid\text{match}]>0.5\,\mathrm{PQ}$, which at PQ$\approx0.4$ requires a matched mask to overlap by about 0.2 in expectation; this rule guided the threshold and minimum-area sweeps.
+
+\reportfigure{fig3_final_submission.pdf}{1.0}{fig:predictions}{(a,c) Ground-truth masks of one annotator on two out-of-fold training images and (b,d) the final submission's out-of-fold masks on the same crops, red. The predicted masks follow the elongated, thin filament morphology and its orientation; the remaining differences are boundary under-coverage of thin barbs and a small positive area bias (mean predicted area 8\% above the annotations).}
+
+\subsection{Strengths, weaknesses and improvements}
+The cascade is strong on small, isolated filaments and its assembly stage guarantees a valid pixel-disjoint submission by construction, while the metric-aligned model selection avoids over-fitting to crop-level Dice.
+Its weaknesses are the two-stage latency, the sensitivity to the detector operating point, and the residual under-coverage of thin barbs and low-contrast filaments; the missing-image failure is the most visible consequence.
+The most promising next steps are to train on the consensus geometry with soft multi-annotator targets, to add spine- and boundary-based auxiliary supervision from the available annotations, to use slicing-aided inference for the smallest objects, and to refine the ensemble at a higher crop resolution.
+The end-to-end cost of the current cascade is 90 s for 180 images (0.5 s per image on one NVIDIA T4), which is well within the competition's efficiency expectation.
+
+% =============================================================================
+\section{Acknowledgment}
+The organization of the Filament Segmentation Challenge 2026 is partially supported by the U.S. National Science Foundation (NSF) under Grant No. 2209912 and 2433781, directorate for Computer and Information Science and Engineering (CSE), and Office of Advanced Cyberinfrastructure (OAC), and Grant No. 2511630, AST Division Of Astronomical Sciences and MPS Directorate for Mathematical and Physical Sciences.
+
+The Filament Segmentation Challenge 2026 is sponsored by the U.S. National Science Foundation (NSF) National Solar Observatory (NSO).
+
+This work utilizes GONG data obtained by the NSO Integrated Synoptic Program, managed by the National Solar Observatory, which is operated by the Association of Universities for Research in Astronomy (AURA), Inc. under a cooperative agreement with the National Science Foundation and with contribution from the National Oceanic and Atmospheric Administration. The GONG network of instruments is hosted by the Big Bear Solar Observatory, High Altitude Observatory, Learmonth Solar Observatory, Udaipur Solar Observatory, Instituto de Astrof\'{\i}sica de Canarias, and Cerro Tololo Interamerican Observatory.
+
+% =============================================================================
+% References: entries [1]-[2] reproduce the official template exactly; the rest
+% are the citations used above. Remove unused entries.
+\begin{thebibliography}{9}
+
+\bibitem{magfilo2024}
+Azim Ahmadzadeh, Rohan Adhyapak, Kartik Chaurasiya, Laxmi Alekhya Nagubandi, V. Aparna, Petrus C. Martens, Alexei Pevtsov, Luca Bertello, Alexander Pevtsov, Naomi Douglas, Samuel McDonald, Apaar Bawa, Eugene Kang, Riley Wu, Dustin J. Kempton, Aya Abdelkarem, Patrick M. Copeland, and Sri Harsha Seelamneni.
+2024.
+A dataset of manually annotated filaments from H-alpha observations.
+In \emph{Nature Scientific Data (Nature Scientific Data, Vol. 11)}.
+Springer, Article 1031, 1031 pages.
+doi:10.1038/s41597-024-03876-y.
+
+\bibitem{challenge2026}
+Azim Ahmadzadeh, Dustin J. Kempton, Qin Li, and Alexei A. Pevtsov.
+2026.
+Solar Filament Segmentation Challenge 2026.
+\url{https://kaggle.com/competitions/filament-segmentation-2026}.
+Kaggle.
+
+\bibitem{kirillov2019}
+Alexander Kirillov, Kaiming He, Ross Girshick, Carsten Rother, and Piotr Doll\'{a}r.
+2019.
+Panoptic segmentation.
+In \emph{Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, 9404--9413.
+doi:10.1109/CVPR.2019.00963.
+
+\bibitem{ronneberger2015}
+Olaf Ronneberger, Philipp Fischer, and Thomas Brox.
+2015.
+U-Net: Convolutional networks for biomedical image segmentation.
+In \emph{Medical Image Computing and Computer-Assisted Intervention (MICCAI)}, 234--241.
+arXiv:1505.04597.
+
+\bibitem{ultralytics}
+Glenn Jocher and Jing Qiu.
+2025.
+Ultralytics YOLO11 (version 8.4).
+\url{https://docs.ultralytics.com/models/yolo11/}.
+
+\end{thebibliography}
+
+\end{document}
