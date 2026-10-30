@@ -1,38 +1,47 @@
 # Quantitative analysis for the evaluation rubric
 
-The organisers' rubric (Evaluation page) scores, under Quantitative Comparison (70%):
-Panoptic Quality, the distribution of Dice scores, the distribution of IoU scores, and the distribution
-of one-to-many / many-to-one relations between ground truth and predictions. This file records those
-quantities for the final submission (public U-Net ensemble, reproduced), computed on grouped five-fold
-out-of-fold predictions of the same pipeline (142 physical images, 232 annotator-image records).
+The organisers' rubric (Evaluation page) scores, under Quantitative Comparison (70%): Panoptic Quality,
+the distribution of Dice scores, the distribution of IoU scores, and the distribution of one-to-many /
+many-to-one relations between ground truth and predictions. All numbers below are produced with the
+**organisers' self-evaluation notebook** (azimahmadzadeh/self-evaluation-notebook) applied to the
+out-of-fold predictions of the final submission (public 10x U-Net ensemble, 142 physical images,
+232 annotator-image records, 1,817 annotations, 1,765 predicted masks).
 
-## Protocol
+Reproduce:
 
-For every annotator record we compute the pairwise IoU matrix between its masks and the predictions of the
-same physical image; a pair with IoU > 0.5 is a true positive, predictions without a hit are FP and
-annotations without a hit are FN. Dice is computed per matched pair as 2|A n B| / (|A| + |B|).
+    python src/official_selfeval.py   # writes work/analysis/ensemble/official_selfeval_metrics.json
 
-## Results (fold-0 out-of-fold)
+Inputs: `work/dariush_oof/pred_dariush_fold0.csv` (fold-aware out-of-fold predictions) and the official
+training annotations; the script reproduces `rles_to_layers`, `get_overlap_matrices`, `get_overlap_df`,
+`get_pq_score` and `plot_m2n_counts` exactly as in the organisers' notebook.
 
-| Quantity | Value |
+## Panoptic Quality
+
+| quantity | value |
 |---|---|
+| PQ | 0.4755 |
 | TP / FP / FN | 1238 / 528 / 579 |
-| PQ / SQ / RQ | 0.4755 / 0.6881 / 0.6910 |
-| Dice mean (std) | 0.812 (0.063) |
-| Dice p05 / median / p95 | 0.701 / 0.818 / 0.903 |
-| IoU mean (std) | 0.688 (0.089) |
-| IoU p05 / median / p95 | 0.539 / 0.692 / 0.824 |
-| IoU min / max (matched pairs) | 0.502 / 0.885 |
-| One-to-many (one annotation matched by >=2 predictions) | 0 |
-| Many-to-one (one prediction matched by >=2 annotations) | 1 (max 2 annotations) |
+| SQ (mean IoU of TP) / RQ | 0.6881 / 0.6910 |
 
-Notes: predictions are pixel-disjoint by construction, so a ground-truth object split by the detector
-produces two false positives and one false negative rather than a one-to-many match; the only many-to-one
-case is a predicted mask that spans two overlapping annotations.
+## Distributions over all pairs with non-zero overlap (n = 1,602)
 
-## Reproduce
+| quantity | p05 | p25 | median | p75 | p95 | mean |
+|---|---|---|---|---|---|---|
+| IoU | 0.200 | 0.527 | 0.655 | 0.739 | 0.818 | 0.605 |
+| Dice | 0.334 | 0.690 | 0.791 | 0.850 | 0.900 | 0.734 |
 
-    python src/rubric_metrics.py   # writes work/analysis/ensemble/rubric_metrics_fold0.json
+The zero-overlap pairs are excluded from these histograms by the official plotting helper; including them
+the means are 0.057 (IoU) and 0.070 (Dice) over all 16,916 GT-prediction pairs.
 
-Inputs: `work/dariush_oof/pred_dariush_fold0.csv` (fold-aware out-of-fold predictions of the reproduced
-public ensemble) and the official training annotations.
+## One-to-many and many-to-one relations (overlap > 0)
+
+| degree | annotations (1:n) | predictions (n:1) |
+|---|---|---|
+| 0 (no overlap) | 305 | 209 |
+| 1 | 1428 | 1512 |
+| 2 | 78 | 42 |
+| 3 | 6 | 2 |
+
+i.e. 84 of 1,817 annotations overlap two or three predictions, and 44 of 1,765 predictions overlap two
+or three annotations. Because predictions are pixel-disjoint, split objects appear as two false positives
+and one false negative under the IoU > 0.5 scoring rule rather than as a matched one-to-many pair.
