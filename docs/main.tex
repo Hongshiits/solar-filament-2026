@@ -1,4 +1,5 @@
 % !TEX program = pdflatex
+% Formatting constraint (organisers): 4 pages maximum, EXCLUDING Acknowledgment and References
 % =============================================================================
 % main.tex -- technical report, Solar Filament Segmentation Challenge 2026
 %
@@ -53,17 +54,17 @@
 \author{Tooku}
 \affiliation{%
   \institution{Independent Researcher}
-  \city{Hong Kong}
+  \city{Hunan}
   \country{China}
 }
-\email{ptcuoigl@users.noreply.github.com}
+\email{hongshiite@outlook.com}
 
 \begin{abstract}
 This report describes our solution to the Solar Filament Segmentation Challenge 2026, a Kaggle competition on automatic segmentation of solar filaments in GONG H-$\alpha$ observations.
 We build a two-stage instance-segmentation cascade: a single-class YOLO11-seg detector proposes filament instances on $1024\times1024$ H-$\alpha$ images, and a seed-conditioned ResNet18 U-Net refiner re-segments every proposal on a $256\times256$ crop cut at the native $2048\times2048$ resolution.
 A four-flip test-time augmentation with a topology guard is followed by a score-ordered pixel-disjoint assembly, which is mandatory for a valid submission, and the instances are encoded as compressed COCO RLE.
 Training and evaluation use only the official MAGFiLO annotations (707 physical observations, 1154 annotation records, 8199 instances) with grouped splits, and the official per-annotator Panoptic Quality as the only model-selection criterion.
-On the held-out fold of the grouped split the self-trained cascade reaches PQ = 0.378 (SQ 0.6475, RQ 0.5838); on the public leaderboard the self-trained cascade scores 0.34, a two-model public U-Net ensemble scores 0.37, and the submitted ten-model U-Net ensemble scores 0.39 (rank 248 of 1260 teams), against a human inter-annotator PQ of 0.3399 and a consensus-target oracle upper bound of 0.6547.
+On the held-out fold of the grouped split the self-trained cascade reaches PQ = 0.378 (SQ 0.6475, RQ 0.5838); on the public leaderboard the self-trained cascade scores 0.34, a two-model public U-Net ensemble scores 0.37, and the submitted ten-model U-Net ensemble scores 0.39 (rank 216 of 1408 teams on 2026-11-06), against a human inter-annotator PQ of 0.3399 and a consensus-target oracle upper bound of 0.6547.
 \end{abstract}
 
 \keywords{solar filaments, instance segmentation, panoptic quality, YOLO, U-Net}

@@ -1,6 +1,6 @@
 # Solar Filament Segmentation Challenge 2026 — Reproducible Solution
 
-Team: **Tooku (Kaggle: ptcuoigl)** · Competition: [filament-segmentation-2026](https://www.kaggle.com/competitions/filament-segmentation-2026) · Task: instance segmentation of solar filaments in GONG H-alpha full-disk images (2048×2048).
+Team: **Tooku (Kaggle: ptcuoigl; contact: hongshiite@outlook.com, Hunan, China)** · Competition: [filament-segmentation-2026](https://www.kaggle.com/competitions/filament-segmentation-2026) · Task: instance segmentation of solar filaments in GONG H-alpha full-disk images (2048×2048).
 Official metric: instance-level **Panoptic Quality (PQ)** with IoU > 0.5 matching, scored per annotator pass.
 
 > This repository is the reference implementation submitted for the final evaluation of the competition.
