@@ -76,7 +76,7 @@ Tested with Python 3.14; local development on one NVIDIA RTX 2080 Super Max-Q (8
 Expected runtime: about **1.5 minutes** for all 180 test images on one NVIDIA T4 (0.5 s/image).
 
     # 1) get the code and the weights
-    git clone https://github.com/TODO-GITHUB-OWNER/solar-filament-2026 solar-filament
+    git clone https://github.com/Hongshiits/solar-filament-2026 solar-filament
     cd solar-filament
     ./scripts/check_weights.py            # or: python scripts/check_weights.py
 

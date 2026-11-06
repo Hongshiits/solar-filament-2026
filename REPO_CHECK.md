@@ -93,7 +93,7 @@ git push -u origin main
 ```
 
 No Git LFS setup is required (each weight file is < 100 MB). The only thing the team must
-replace before publishing is the GitHub owner: currently written as TODO-GITHUB-OWNER in
+replace before publishing is the GitHub owner: currently written as Hongshiits in
 README.md.
 
 ## 6. Licensing and compliance notes
