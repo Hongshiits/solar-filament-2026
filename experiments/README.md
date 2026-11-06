@@ -41,3 +41,20 @@ All three were evaluated on the honest fold-0 out-of-fold predictions of the rep
 | adding low-confidence detections outside existing masks | 50-56 instances added; PQ -0.0016/-0.0024/-0.0042 | negative: mostly false positives |
 
 Conclusion: post-processing cannot raise the score beyond the published KEEP rule; the remaining gap is model quality.
+## notoverkil refiner reverse engineering (negative, 2026-11-06)
+
+The public `notoverkil/solar-filament-weights` dataset ships a refiner checkpoint (`refiner/fold-0.pt`, 93 MB,
+`size=256`, `channels=2`) and an HGB rescorer. We tried to recover its inference semantics from the weights:
+
+- architecture is shape-complete: ResNet34 encoder with a 2-channel 7x7 stem plus four decoder blocks
+  (768->256, 384->128, 192->64, 128->32), a full-resolution block (34->24) and a 1-channel head; a strict
+  `load_state_dict` succeeds, but several wirings are shape-compatible;
+- the stem's per-input-channel weight norms are 17.38 vs 0.37, and matching the stem convolution output
+  statistics to the stored BatchNorm running statistics identifies the channel order as (prior mask, image);
+- nevertheless the GT-mask-prior self-consistency test (feed the ground-truth mask as prior: a correct refiner
+  should reproduce it) tops out at IoU 0.136 over 4 crop paddings x 3 input resolutions x 32 decoder wirings,
+  and the reconstructed forward pass is effectively input-independent (25-36% positive area for zero, one,
+  noise, image-only and prior-only inputs).
+
+Verdict: the released checkpoint cannot be reused without the authors' code, so their public 0.41 remains
+unreachable by this route. Their published submission file is not used (compliance).
