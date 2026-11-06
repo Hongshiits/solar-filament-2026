@@ -55,3 +55,20 @@ see `notebooks/final_pipeline.ipynb` and `docs/INFERENCE.md`.
 We recommend selecting A and B: both score 0.39 on the public leaderboard, they are genuinely different
 strategies (semantic U-Net ensemble vs. instance-detector consensus), and both are reproducible from the
 public weights plus the code and data in this repository.
+## Organiser requirement of 2026-11-05 (demo notebook entry point)
+
+The organisers clarified (discussion topic 755907) that the repository must ship a **demo notebook** that
+reproduces the predictions **without re-training**, that the model weights may live anywhere as long as the
+notebook can load them **without any manual download**, and that preprocessing/postprocessing code must be
+part of the notebook. Size matters too: they ask for the final model file, not large training checkpoints.
+
+How this repository satisfies it:
+- `notebooks/demo_submission_A.ipynb` and `notebooks/demo_submission_B.ipynb` are the entry points; they attach
+  the public Kaggle weight datasets by id (`dariushafshar/solar-filament-unet-weights`,
+  `notoverkil/solar-filament-weights`) so the committee needs no download step;
+- `notebooks/final_pipeline.ipynb` covers our own cascade, whose final weights (best_det.pt, best_ref.pt) are
+  stored in `weights/` (~74 MB together, i.e. the final inference models rather than training checkpoints);
+- preprocessing and postprocessing are in `src/`/`scripts/` and are called from the notebooks; training is
+  optional and documented (`docs/TRAIN.md`);
+- `src/eval_demo.py` reproduces the reported pooled PQ and the rubric distributions (verified: PQ 0.4755,
+  SQ 0.6881, RQ 0.6910, TP/FP/FN = 1238/528/579 on the fold-0 out-of-fold predictions).
