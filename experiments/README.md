@@ -29,3 +29,15 @@ is reproducibility material; the final submission is documented in the top-level
 
 - `code/` - training / inference / fusion / candidate-generation scripts.
 - `notes/` - experiment logs, fusion commands, negative-result archive.
+## Post-processing and rescorer experiments (negative, 2026-11-06)
+
+All three were evaluated on the honest fold-0 out-of-fold predictions of the reproduced public ensemble
+(baseline pooled PQ 0.4755: TP/FP/FN = 1238/528/579) and none improves the score:
+
+| experiment | result | verdict |
+|---|---|---|
+| learned instance rescorer (GBM, 21 geometry + probability features, grouped 5-fold CV) | OOF AUC 0.6797; dense PQ 0.4753/0.4747/0.4733/0.4740/0.4748/0.4718/0.4672 at tau=0.05..0.50; sparse-sim (r=0.77) 0.4104-0.4118 vs 0.4140 baseline | negative: the hand-tuned KEEP rule (mean prob >= 0.85) is already optimal |
+| watershed splitting of predictions that merge >= 2 GT instances | 52 splits; PQ 0.5365 -> 0.3820 on a 40-image subset (-0.1545) | strongly negative: split parts fall below IoU 0.5 |
+| adding low-confidence detections outside existing masks | 50-56 instances added; PQ -0.0016/-0.0024/-0.0042 | negative: mostly false positives |
+
+Conclusion: post-processing cannot raise the score beyond the published KEEP rule; the remaining gap is model quality.
